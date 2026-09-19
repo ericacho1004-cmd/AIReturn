@@ -9,7 +9,6 @@
  * - OPENAI_MODEL    선택, 기본값 gpt-5.6-luna
  * - SPREADSHEET_ID  선택, 기본값은 아래 DB
  * - SHEET_GID       선택, 기본값 0
- * - CLAIM_LOG_SPREADSHEET_ID 자동 생성되는 비공개 회수 기록 DB
  */
 
 const DEFAULT_SPREADSHEET_ID = "1CTQwF0AhBEgA42sPALIjYo8Hex8q-sX2DAOEDmvLZ7Q";
@@ -69,12 +68,10 @@ function setupProject() {
   }
 
   const sheet = getDatabaseSheet_();
-  const claimLog = getClaimLogSheet_();
   const result = {
     spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + getSpreadsheetId_() + "/edit#gid=" + sheet.getSheetId(),
     sheetName: sheet.getName(),
     rows: sheet.getLastRow(),
-    privateClaimLogUrl: claimLog.getParent().getUrl(),
   };
   console.log(JSON.stringify(result, null, 2));
   return result;
@@ -111,9 +108,7 @@ function registerItem_(body) {
 
 function claimItem_(body) {
   const requestedRowNumber = Number(body.rowNumber);
-  const phone = normalizePhone_(body.phone);
   if (!Number.isInteger(requestedRowNumber) || requestedRowNumber < 1) throw new Error("회수할 물건 정보가 올바르지 않습니다.");
-  if (phone.length < 9 || phone.length > 15) throw new Error("연락 가능한 전화번호를 정확히 입력해 주세요.");
 
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -130,14 +125,6 @@ function claimItem_(body) {
     }
 
     const recoveredAt = new Date();
-    appendClaimLog_({
-      recoveredAt: recoveredAt,
-      rowNumber: rowNumber,
-      createdAt: row[0],
-      name: cleanText_(analysis.name, 80) || "이름 미상 물건",
-      location: cleanText_(analysis.location, 30) || "미지정",
-      phone: phone,
-    });
     sheet.getRange(rowNumber, 3).setValue(upsertAnalysisFields_(analysisText, {
       status: "회수 완료",
       recoveredAt: recoveredAt.toISOString(),
@@ -338,53 +325,6 @@ function upsertAnalysisFields_(analysisText, fields) {
   return keptLines.filter(Boolean).join("\n");
 }
 
-function getClaimLogSheet_() {
-  const properties = PropertiesService.getScriptProperties();
-  let spreadsheetId = properties.getProperty("CLAIM_LOG_SPREADSHEET_ID");
-  let spreadsheet;
-
-  if (spreadsheetId) {
-    try {
-      spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    } catch (error) {
-      console.warn("기존 회수 기록 DB를 열 수 없어 새로 생성합니다: " + error.message);
-    }
-  }
-  if (!spreadsheet) {
-    spreadsheet = SpreadsheetApp.create("다시, 여기 - 비공개 회수 기록");
-    properties.setProperty("CLAIM_LOG_SPREADSHEET_ID", spreadsheet.getId());
-  }
-
-  let sheet = spreadsheet.getSheetByName("회수 기록");
-  if (!sheet) {
-    sheet = spreadsheet.getSheets()[0];
-    sheet.setName("회수 기록");
-  }
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["회수 시간", "원본 행", "등록 시간", "물건 이름", "보관 위치", "전화번호"]);
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-function appendClaimLog_(record) {
-  const sheet = getClaimLogSheet_();
-  const nextRow = sheet.getLastRow() + 1;
-  sheet.getRange(nextRow, 4, 1, 3).setNumberFormat("@");
-  sheet.getRange(nextRow, 1, 1, 6).setValues([[
-    record.recoveredAt,
-    record.rowNumber,
-    record.createdAt,
-    record.name,
-    record.location,
-    record.phone,
-  ]]);
-}
-
-function normalizePhone_(value) {
-  return String(value || "").replace(/\D/g, "").slice(0, 15);
-}
-
 function parseAnalysisText_(text) {
   const result = {};
   String(text || "").split(/\r?\n/).forEach(function(line) {
@@ -446,7 +386,7 @@ function jsonResponse_(body) {
 
 function publicError_(error) {
   const message = error && error.message ? error.message : "서버 오류가 발생했습니다.";
-  const safeMessages = ["입력", "필요", "설정", "없", "올바르지", "실패", "확인", "이미지", "사진", "전화번호", "회수", "지원하지", "찾지"];
+  const safeMessages = ["입력", "필요", "설정", "없", "올바르지", "실패", "확인", "이미지", "사진", "회수", "지원하지", "찾지"];
   return safeMessages.some(function(fragment) { return message.indexOf(fragment) !== -1; })
     ? message
     : "서버 처리 중 오류가 발생했습니다.";

@@ -301,10 +301,7 @@ function openItemDetail(item) {
           </div>` : `
           <form class="claim-form" id="claim-form">
             <h3>이 물건이 본인 물건인가요?</h3>
-            <p>잘못 가져간 경우 연락할 수 있도록 전화번호를 비공개로 기록합니다.</p>
-            <label for="claim-phone">가져가는 분의 전화번호</label>
-            <input id="claim-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-1234-5678" maxlength="20" required />
-            <label class="privacy-check"><input name="consent" type="checkbox" required /> 회수 확인을 위한 전화번호 저장에 동의합니다.</label>
+            <p>물건을 가져갔다면 회수 완료로 표시해 주세요.</p>
             <p class="claim-message" id="claim-message" aria-live="polite"></p>
             <button class="claim-button" type="submit">내 물건 가져가기</button>
           </form>`}
@@ -376,16 +373,12 @@ async function claimItem(event, item) {
   const form = event.currentTarget;
   const message = form.querySelector("#claim-message");
   const submit = form.querySelector("button[type=submit]");
-  const phone = String(new FormData(form).get("phone") || "").trim();
 
   if (!config.API_URL) {
     message.textContent = "회수 기능을 사용하려면 config.js에 Apps Script 주소를 연결해 주세요.";
     return;
   }
-  if (!/^\+?[0-9()\-\s]{9,20}$/.test(phone) || phone.replace(/\D/g, "").length < 9) {
-    message.textContent = "연락 가능한 전화번호를 정확히 입력해 주세요.";
-    return;
-  }
+  if (!window.confirm("이 물건을 회수 완료로 표시할까요?")) return;
 
   submit.disabled = true;
   submit.textContent = "회수 처리 중...";
@@ -398,7 +391,6 @@ async function claimItem(event, item) {
         action: "claim",
         rowNumber: item.rowNumber,
         createdAt: item.createdAt,
-        phone,
       }),
     });
     const data = await response.json();
@@ -412,7 +404,7 @@ async function claimItem(event, item) {
     elements.recovered.textContent = loadedItems.filter((loadedItem) => loadedItem.status === "회수 완료").length;
     elements.itemModal.close();
     applyStatusFilter();
-    showToast("회수 완료로 처리했습니다. 전화번호는 비공개로 보관됩니다.");
+    showToast("회수 완료로 처리했습니다.");
   } catch (error) {
     message.textContent = error.message || "회수 처리 중 오류가 발생했습니다.";
     submit.disabled = false;

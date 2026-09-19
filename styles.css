@@ -184,11 +184,6 @@ footer { padding: 55px clamp(24px, 8vw, 130px); display: grid; grid-template-col
 .detail-block { padding: 19px 0; border-top: 1px solid var(--line); }.detail-block small { display: block; margin-bottom: 8px; color: var(--ink-soft); font-size: 11px; font-weight: 700; letter-spacing: .08em; }.detail-block p { margin: 0; }.detail-tags { display: flex; flex-wrap: wrap; gap: 7px; }.detail-tags span { padding: 7px 10px; border-radius: 7px; background: var(--cream); font-size: 12px; }.location-box { margin-top: 10px; padding: 17px; display: flex; align-items: center; justify-content: space-between; border-radius: 13px; color: white; background: var(--ink); }.location-box strong { font-size: 22px; }.location-box span { font-size: 11px; color: rgba(255,255,255,.66); }
 .claim-form { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--cream); }
 .claim-form h3 { margin: 0 0 5px; font-size: 17px; }.claim-form > p { margin: 0 0 14px; color: var(--ink-soft); font-size: 12px; }
-.claim-form > label:not(.privacy-check) { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; }
-.claim-form input[type="tel"] { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: white; outline: 0; }
-.claim-form input[type="tel"]:focus { border-color: var(--sage); box-shadow: 0 0 0 3px rgba(159,184,160,.2); }
-.privacy-check { margin-top: 11px; display: flex; align-items: flex-start; gap: 7px; color: var(--ink-soft); font-size: 11px; cursor: pointer; }
-.privacy-check input { margin-top: 3px; accent-color: var(--ink); }
 .claim-message { min-height: 17px; margin: 8px 0 0 !important; color: #b3422c !important; }
 .claim-button { width: 100%; margin-top: 4px; padding: 12px; border: 0; border-radius: 10px; color: white; background: var(--orange); font-weight: 800; cursor: pointer; }
 .claim-button:hover { background: #cf6030; }.claim-button:disabled { opacity: .58; cursor: wait; }
