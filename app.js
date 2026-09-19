@@ -59,6 +59,7 @@ const elements = {
   title: document.querySelector("#items-title"),
   total: document.querySelector("#total-count"),
   stored: document.querySelector("#stored-count"),
+  recovered: document.querySelector("#recovered-count"),
   searchForm: document.querySelector("#search-form"),
   searchInput: document.querySelector("#search-input"),
   itemModal: document.querySelector("#item-modal"),
@@ -74,6 +75,9 @@ const elements = {
 };
 
 let currentItems = [];
+let loadedItems = [];
+let currentQuery = "";
+let currentStatusFilter = "전체";
 let toastTimer;
 
 function isDemoMode() {
@@ -130,13 +134,15 @@ function normalizeItem(item) {
     location: item.location || "확인 필요",
     imageUrl: item.imageUrl || item.image_url || item.imageData || "",
     createdAt: item.createdAt || item.created_at || "",
-    status: item.status || "보관 중",
+    status: ["회수 완료", "반환 완료"].includes(item.status) ? "회수 완료" : "보관 중",
+    recoveredAt: item.recoveredAt || item.recovered_at || "",
+    rowNumber: Number(item.rowNumber || item.row_number || 0),
   };
 }
 
 function parseAnalysisText(text = "") {
   const result = {};
-  const knownKeys = ["name", "category", "color", "features", "distinctiveFeatures", "location", "note"];
+  const knownKeys = ["name", "category", "color", "features", "distinctiveFeatures", "location", "note", "status", "recoveredAt"];
 
   String(text).split(/\r?\n/).forEach((line) => {
     const match = line.match(/^([A-Za-z_]+)\s*:\s*["']?(.*?)["']?\s*$/);
@@ -176,7 +182,9 @@ function sheetRowToItem(row, index) {
     location: analysis.location || "미지정",
     imageData,
     createdAt,
-    status: "보관 중",
+    status: analysis.status || "보관 중",
+    recoveredAt: analysis.recoveredAt || "",
+    rowNumber: index + 1,
   });
 }
 
@@ -217,6 +225,8 @@ function loadPublicSheetItems() {
 
     const params = new URLSearchParams({
       gid: String(config.SHEET_GID || "0"),
+      headers: "0",
+      _: String(Date.now()),
       tqx: `out:json;responseHandler:${callbackName}`,
     });
     script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(config.SHEET_ID)}/gviz/tq?${params}`;
@@ -249,7 +259,7 @@ function renderItems(items) {
     card.innerHTML = `
       <div class="item-image">
         ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" />` : ""}
-        <span class="item-status ${item.status === "반환 완료" ? "returned" : ""}">${escapeHtml(item.status)}</span>
+        <span class="item-status ${item.status === "회수 완료" ? "returned" : ""}">${escapeHtml(item.status)}</span>
       </div>
       <div class="item-body">
         <span class="item-category">${escapeHtml(item.category)}</span>
@@ -284,9 +294,41 @@ function openItemDetail(item) {
         <div class="detail-block"><small>눈에 띄는 특징</small><div class="detail-tags">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("") || "정보 없음"}</div></div>
         <div class="detail-block"><small>등록일</small><p>${escapeHtml(formatDate(item.createdAt))}</p></div>
         <div class="location-box"><span>보관 위치</span><strong>${escapeHtml(item.location)}</strong></div>
+        ${item.status === "회수 완료" ? `
+          <div class="recovered-box">
+            <strong>회수 완료된 물건입니다</strong>
+            <p>${item.recoveredAt ? `${escapeHtml(formatDate(item.recoveredAt))}에 주인이 찾아갔습니다.` : "주인이 찾아간 물건입니다."}</p>
+          </div>` : `
+          <form class="claim-form" id="claim-form">
+            <h3>이 물건이 본인 물건인가요?</h3>
+            <p>잘못 가져간 경우 연락할 수 있도록 전화번호를 비공개로 기록합니다.</p>
+            <label for="claim-phone">가져가는 분의 전화번호</label>
+            <input id="claim-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-1234-5678" maxlength="20" required />
+            <label class="privacy-check"><input name="consent" type="checkbox" required /> 회수 확인을 위한 전화번호 저장에 동의합니다.</label>
+            <p class="claim-message" id="claim-message" aria-live="polite"></p>
+            <button class="claim-button" type="submit">내 물건 가져가기</button>
+          </form>`}
       </div>
     </div>`;
+  const claimForm = elements.itemDetail.querySelector("#claim-form");
+  if (claimForm) claimForm.addEventListener("submit", (event) => claimItem(event, item));
   elements.itemModal.showModal();
+}
+
+function applyStatusFilter() {
+  const visibleItems = currentStatusFilter === "전체"
+    ? loadedItems
+    : loadedItems.filter((item) => item.status === currentStatusFilter);
+  renderItems(visibleItems);
+  if (currentQuery) {
+    elements.title.textContent = `“${currentQuery}” 검색 결과`;
+  } else if (currentStatusFilter === "회수 완료") {
+    elements.title.textContent = "회수된 분실물";
+  } else if (currentStatusFilter === "보관 중") {
+    elements.title.textContent = "현재 보관 중인 물건";
+  } else {
+    elements.title.textContent = "최근 등록된 물건";
+  }
 }
 
 async function fetchItems(query = "") {
@@ -315,15 +357,66 @@ async function fetchItems(query = "") {
       items = data.items || [];
     }
 
-    renderItems(items);
-    elements.title.textContent = query ? `“${query}” 검색 결과` : "최근 등록된 물건";
-    elements.total.textContent = items.length;
-    elements.stored.textContent = items.filter((item) => (item.status || "보관 중") === "보관 중").length;
+    currentQuery = query;
+    loadedItems = items.map(normalizeItem);
+    applyStatusFilter();
+    elements.total.textContent = loadedItems.length;
+    elements.stored.textContent = loadedItems.filter((item) => item.status === "보관 중").length;
+    elements.recovered.textContent = loadedItems.filter((item) => item.status === "회수 완료").length;
   } catch (error) {
     renderItems([]);
     showToast(error.message || "데이터를 불러오는 중 오류가 발생했습니다.");
   } finally {
     elements.loading.hidden = true;
+  }
+}
+
+async function claimItem(event, item) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = form.querySelector("#claim-message");
+  const submit = form.querySelector("button[type=submit]");
+  const phone = String(new FormData(form).get("phone") || "").trim();
+
+  if (!config.API_URL) {
+    message.textContent = "회수 기능을 사용하려면 config.js에 Apps Script 주소를 연결해 주세요.";
+    return;
+  }
+  if (!/^\+?[0-9()\-\s]{9,20}$/.test(phone) || phone.replace(/\D/g, "").length < 9) {
+    message.textContent = "연락 가능한 전화번호를 정확히 입력해 주세요.";
+    return;
+  }
+
+  submit.disabled = true;
+  submit.textContent = "회수 처리 중...";
+  message.textContent = "";
+  try {
+    const response = await fetch(config.API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "claim",
+        rowNumber: item.rowNumber,
+        createdAt: item.createdAt,
+        phone,
+      }),
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || "회수 처리에 실패했습니다.");
+
+    const recoveredAt = data.recoveredAt || new Date().toISOString();
+    loadedItems = loadedItems.map((loadedItem) => loadedItem.id === item.id
+      ? { ...loadedItem, status: "회수 완료", recoveredAt }
+      : loadedItem);
+    elements.stored.textContent = loadedItems.filter((loadedItem) => loadedItem.status === "보관 중").length;
+    elements.recovered.textContent = loadedItems.filter((loadedItem) => loadedItem.status === "회수 완료").length;
+    elements.itemModal.close();
+    applyStatusFilter();
+    showToast("회수 완료로 처리했습니다. 전화번호는 비공개로 보관됩니다.");
+  } catch (error) {
+    message.textContent = error.message || "회수 처리 중 오류가 발생했습니다.";
+    submit.disabled = false;
+    submit.textContent = "내 물건 가져가기";
   }
 }
 
@@ -357,8 +450,26 @@ document.querySelectorAll("[data-query]").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-status-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    currentStatusFilter = button.dataset.statusFilter;
+    document.querySelectorAll("[data-status-filter]").forEach((filterButton) => {
+      const isActive = filterButton === button;
+      filterButton.classList.toggle("active", isActive);
+      filterButton.setAttribute("aria-pressed", String(isActive));
+    });
+    applyStatusFilter();
+  });
+});
+
 document.querySelector("#show-all").addEventListener("click", () => {
   elements.searchInput.value = "";
+  currentStatusFilter = "전체";
+  document.querySelectorAll("[data-status-filter]").forEach((button) => {
+    const isActive = button.dataset.statusFilter === "전체";
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
   fetchItems();
 });
 

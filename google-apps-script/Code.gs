@@ -9,6 +9,7 @@
  * - OPENAI_MODEL    선택, 기본값 gpt-5.6-luna
  * - SPREADSHEET_ID  선택, 기본값은 아래 DB
  * - SHEET_GID       선택, 기본값 0
+ * - CLAIM_LOG_SPREADSHEET_ID 자동 생성되는 비공개 회수 기록 DB
  */
 
 const DEFAULT_SPREADSHEET_ID = "1CTQwF0AhBEgA42sPALIjYo8Hex8q-sX2DAOEDmvLZ7Q";
@@ -40,11 +41,14 @@ function doGet(event) {
 function doPost(event) {
   try {
     const body = parseRequestBody_(event);
-    if (String(body.action || "") !== "register") {
-      return jsonResponse_({ ok: false, error: "지원하지 않는 요청입니다." });
+    const action = String(body.action || "");
+    if (action === "register") {
+      return jsonResponse_({ ok: true, item: registerItem_(body) });
     }
-
-    return jsonResponse_({ ok: true, item: registerItem_(body) });
+    if (action === "claim") {
+      return jsonResponse_(claimItem_(body));
+    }
+    return jsonResponse_({ ok: false, error: "지원하지 않는 요청입니다." });
   } catch (error) {
     console.error(error);
     return jsonResponse_({ ok: false, error: publicError_(error) });
@@ -65,10 +69,12 @@ function setupProject() {
   }
 
   const sheet = getDatabaseSheet_();
+  const claimLog = getClaimLogSheet_();
   const result = {
     spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + getSpreadsheetId_() + "/edit#gid=" + sheet.getSheetId(),
     sheetName: sheet.getName(),
     rows: sheet.getLastRow(),
+    privateClaimLogUrl: claimLog.getParent().getUrl(),
   };
   console.log(JSON.stringify(result, null, 2));
   return result;
@@ -89,15 +95,78 @@ function registerItem_(body) {
   const now = new Date();
   const analysisText = formatAnalysisText_(analysis, location, note);
 
+  let rowNumber;
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    getDatabaseSheet_().appendRow([now, imageData, analysisText]);
+    const sheet = getDatabaseSheet_();
+    sheet.appendRow([now, imageData, analysisText]);
+    rowNumber = sheet.getLastRow();
   } finally {
     lock.releaseLock();
   }
 
-  return analysisToItem_(analysis, imageData, now, location);
+  return analysisToItem_(analysis, imageData, now, location, rowNumber - 1);
+}
+
+function claimItem_(body) {
+  const requestedRowNumber = Number(body.rowNumber);
+  const phone = normalizePhone_(body.phone);
+  if (!Number.isInteger(requestedRowNumber) || requestedRowNumber < 1) throw new Error("회수할 물건 정보가 올바르지 않습니다.");
+  if (phone.length < 9 || phone.length > 15) throw new Error("연락 가능한 전화번호를 정확히 입력해 주세요.");
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getDatabaseSheet_();
+    const rowNumber = resolveClaimRowNumber_(sheet, requestedRowNumber, body.createdAt);
+
+    const row = sheet.getRange(rowNumber, 1, 1, 3).getValues()[0];
+    const analysisText = String(row[2] || "");
+    const analysis = parseAnalysisText_(analysisText);
+    if (!row[1] && !analysisText) throw new Error("회수할 물건을 찾지 못했습니다.");
+    if (analysis.status === "회수 완료" || analysis.status === "반환 완료") {
+      throw new Error("이미 회수 완료된 물건입니다.");
+    }
+
+    const recoveredAt = new Date();
+    appendClaimLog_({
+      recoveredAt: recoveredAt,
+      rowNumber: rowNumber,
+      createdAt: row[0],
+      name: cleanText_(analysis.name, 80) || "이름 미상 물건",
+      location: cleanText_(analysis.location, 30) || "미지정",
+      phone: phone,
+    });
+    sheet.getRange(rowNumber, 3).setValue(upsertAnalysisFields_(analysisText, {
+      status: "회수 완료",
+      recoveredAt: recoveredAt.toISOString(),
+    }));
+
+    return { ok: true, status: "회수 완료", recoveredAt: recoveredAt.toISOString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function resolveClaimRowNumber_(sheet, requestedRowNumber, createdAtValue) {
+  const lastRow = sheet.getLastRow();
+  if (requestedRowNumber > lastRow) throw new Error("회수할 물건을 찾지 못했습니다.");
+
+  const expectedTime = new Date(createdAtValue || "").getTime();
+  if (!Number.isFinite(expectedTime)) return requestedRowNumber;
+
+  const requestedDate = sheet.getRange(requestedRowNumber, 1).getValue();
+  if (requestedDate instanceof Date && Math.abs(requestedDate.getTime() - expectedTime) < 2000) {
+    return requestedRowNumber;
+  }
+
+  const dates = sheet.getRange(1, 1, lastRow, 1).getValues();
+  for (let index = 0; index < dates.length; index += 1) {
+    const date = dates[index][0];
+    if (date instanceof Date && Math.abs(date.getTime() - expectedTime) < 2000) return index + 1;
+  }
+  throw new Error("회수할 물건을 찾지 못했습니다. 목록을 새로고침해 주세요.");
 }
 
 function analyzeImage_(imageData, note) {
@@ -251,8 +320,69 @@ function analysisToItem_(analysis, imageData, createdAt, location, index) {
     imageData: imageData,
     imageUrl: imageData,
     createdAt: date.toISOString(),
-    status: "보관 중",
+    status: ["회수 완료", "반환 완료"].indexOf(analysis.status) !== -1 ? "회수 완료" : "보관 중",
+    recoveredAt: cleanText_(analysis.recoveredAt, 40),
+    rowNumber: typeof index === "number" ? index + 1 : 0,
   };
+}
+
+function upsertAnalysisFields_(analysisText, fields) {
+  const keys = Object.keys(fields);
+  const keptLines = String(analysisText || "").split(/\r?\n/).filter(function(line) {
+    const match = line.match(/^([A-Za-z_]+)\s*:/);
+    return !match || keys.indexOf(match[1]) === -1;
+  });
+  keys.forEach(function(key) {
+    keptLines.push(key + ': "' + oneLine_(fields[key], 80) + '"');
+  });
+  return keptLines.filter(Boolean).join("\n");
+}
+
+function getClaimLogSheet_() {
+  const properties = PropertiesService.getScriptProperties();
+  let spreadsheetId = properties.getProperty("CLAIM_LOG_SPREADSHEET_ID");
+  let spreadsheet;
+
+  if (spreadsheetId) {
+    try {
+      spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    } catch (error) {
+      console.warn("기존 회수 기록 DB를 열 수 없어 새로 생성합니다: " + error.message);
+    }
+  }
+  if (!spreadsheet) {
+    spreadsheet = SpreadsheetApp.create("다시, 여기 - 비공개 회수 기록");
+    properties.setProperty("CLAIM_LOG_SPREADSHEET_ID", spreadsheet.getId());
+  }
+
+  let sheet = spreadsheet.getSheetByName("회수 기록");
+  if (!sheet) {
+    sheet = spreadsheet.getSheets()[0];
+    sheet.setName("회수 기록");
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["회수 시간", "원본 행", "등록 시간", "물건 이름", "보관 위치", "전화번호"]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function appendClaimLog_(record) {
+  const sheet = getClaimLogSheet_();
+  const nextRow = sheet.getLastRow() + 1;
+  sheet.getRange(nextRow, 4, 1, 3).setNumberFormat("@");
+  sheet.getRange(nextRow, 1, 1, 6).setValues([[
+    record.recoveredAt,
+    record.rowNumber,
+    record.createdAt,
+    record.name,
+    record.location,
+    record.phone,
+  ]]);
+}
+
+function normalizePhone_(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 15);
 }
 
 function parseAnalysisText_(text) {
@@ -316,7 +446,7 @@ function jsonResponse_(body) {
 
 function publicError_(error) {
   const message = error && error.message ? error.message : "서버 오류가 발생했습니다.";
-  const safeMessages = ["입력", "필요", "설정", "없", "올바르지", "실패", "확인", "이미지", "사진", "지원하지", "찾지"];
+  const safeMessages = ["입력", "필요", "설정", "없", "올바르지", "실패", "확인", "이미지", "사진", "전화번호", "회수", "지원하지", "찾지"];
   return safeMessages.some(function(fragment) { return message.indexOf(fragment) !== -1; })
     ? message
     : "서버 처리 중 오류가 발생했습니다.";
