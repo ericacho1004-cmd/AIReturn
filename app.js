@@ -77,7 +77,7 @@ let currentItems = [];
 let toastTimer;
 
 function isDemoMode() {
-  return config.DEMO_MODE || !config.API_URL;
+  return Boolean(config.DEMO_MODE) || (!config.SHEET_ID && !config.API_URL);
 }
 
 function escapeHtml(value = "") {
@@ -90,6 +90,9 @@ function escapeHtml(value = "") {
 }
 
 function safeImageUrl(value) {
+  if (/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(String(value || ""))) {
+    return String(value);
+  }
   try {
     const url = new URL(value, window.location.href);
     return ["http:", "https:"].includes(url.protocol) ? url.href : "";
@@ -125,10 +128,101 @@ function normalizeItem(item) {
     features: toArray(item.features),
     distinctiveFeatures: toArray(item.distinctiveFeatures || item.distinctive_features),
     location: item.location || "확인 필요",
-    imageUrl: item.imageUrl || item.image_url || "",
+    imageUrl: item.imageUrl || item.image_url || item.imageData || "",
     createdAt: item.createdAt || item.created_at || "",
     status: item.status || "보관 중",
   };
+}
+
+function parseAnalysisText(text = "") {
+  const result = {};
+  const knownKeys = ["name", "category", "color", "features", "distinctiveFeatures", "location", "note"];
+
+  String(text).split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^([A-Za-z_]+)\s*:\s*["']?(.*?)["']?\s*$/);
+    if (!match || !knownKeys.includes(match[1])) return;
+    result[match[1]] = match[2].replace(/^["']|["']$/g, "").trim();
+  });
+
+  return result;
+}
+
+function sheetDateToIso(cell) {
+  if (!cell) return "";
+  if (cell.f && /^\d{4}-\d{2}-\d{2}/.test(cell.f)) {
+    return cell.f.replace(" ", "T") + "+09:00";
+  }
+  const match = String(cell.v || "").match(/^Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)$/);
+  if (!match) return String(cell.v || "");
+  const [, year, month, day, hour, minute, second] = match.map(Number);
+  return new Date(year, month, day, hour, minute, second).toISOString();
+}
+
+function sheetRowToItem(row, index) {
+  const cells = row && Array.isArray(row.c) ? row.c : [];
+  const createdAt = sheetDateToIso(cells[0]);
+  const imageData = cells[1] && cells[1].v ? String(cells[1].v) : "";
+  const analysisText = cells[2] && cells[2].v ? String(cells[2].v) : "";
+  const analysis = parseAnalysisText(analysisText);
+
+  if (!imageData && !analysisText) return null;
+  return normalizeItem({
+    id: `sheet-${index}-${createdAt}`,
+    name: analysis.name || "이름 미상 물건",
+    category: analysis.category || "기타",
+    color: analysis.color || "색상 미상",
+    features: analysis.features ? [analysis.features] : [],
+    distinctiveFeatures: analysis.distinctiveFeatures ? [analysis.distinctiveFeatures] : [],
+    location: analysis.location || "미지정",
+    imageData,
+    createdAt,
+    status: "보관 중",
+  });
+}
+
+function loadPublicSheetItems() {
+  return new Promise((resolve, reject) => {
+    if (!config.SHEET_ID) {
+      reject(new Error("Google Sheet ID가 설정되지 않았습니다."));
+      return;
+    }
+
+    const callbackName = `__loadLostItems_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const timeout = window.setTimeout(() => finish(new Error("Google Sheet 응답 시간이 초과되었습니다.")), 15000);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    }
+
+    function finish(error, items = []) {
+      cleanup();
+      if (error) reject(error);
+      else resolve(items);
+    }
+
+    window[callbackName] = (response) => {
+      if (!response || response.status !== "ok" || !response.table) {
+        finish(new Error("Google Sheet 데이터를 읽지 못했습니다."));
+        return;
+      }
+      const items = (response.table.rows || [])
+        .map(sheetRowToItem)
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      finish(null, items);
+    };
+
+    const params = new URLSearchParams({
+      gid: String(config.SHEET_GID || "0"),
+      tqx: `out:json;responseHandler:${callbackName}`,
+    });
+    script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(config.SHEET_ID)}/gviz/tq?${params}`;
+    script.onerror = () => finish(new Error("Google Sheet 연결에 실패했습니다."));
+    document.head.append(script);
+  });
 }
 
 function itemMatches(item, query) {
@@ -206,6 +300,10 @@ async function fetchItems(query = "") {
       elements.notice.hidden = false;
       await new Promise((resolve) => window.setTimeout(resolve, 280));
       items = query ? demoItems.filter((item) => itemMatches(normalizeItem(item), query)) : demoItems;
+    } else if (config.SHEET_ID) {
+      elements.notice.hidden = true;
+      const sheetItems = await loadPublicSheetItems();
+      items = query ? sheetItems.filter((item) => itemMatches(item, query)) : sheetItems;
     } else {
       elements.notice.hidden = true;
       const url = new URL(config.API_URL);
@@ -270,7 +368,7 @@ document.querySelector("#reset-search").addEventListener("click", () => {
 });
 
 document.querySelector("#open-register").addEventListener("click", () => {
-  if (isDemoMode()) {
+  if (!config.API_URL) {
     showToast("먼저 config.js에 Apps Script 주소를 연결해 주세요.");
   }
   elements.registerModal.showModal();
@@ -304,7 +402,7 @@ elements.imageInput.addEventListener("change", async () => {
 
 elements.registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (isDemoMode()) {
+  if (!config.API_URL) {
     elements.formMessage.textContent = "config.js에 Apps Script 주소를 연결한 뒤 등록할 수 있습니다.";
     return;
   }

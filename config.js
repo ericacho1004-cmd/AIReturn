@@ -1,6 +1,9 @@
-// Google Apps Script 웹 앱 배포 후 발급된 /exec 주소를 입력하세요.
-// 예: "https://script.google.com/macros/s/배포_ID/exec"
 window.APP_CONFIG = {
+  // 현재 공개 Google Sheet DB
+  SHEET_ID: "1CTQwF0AhBEgA42sPALIjYo8Hex8q-sX2DAOEDmvLZ7Q",
+  SHEET_GID: "0",
+
+  // 신규 사진 등록까지 사용할 때 Apps Script 배포 후 /exec 주소를 입력하세요.
   API_URL: "",
-  DEMO_MODE: true,
+  DEMO_MODE: false,
 };

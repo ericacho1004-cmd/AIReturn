@@ -1,159 +1,155 @@
 # 다시, 여기 — Smart Lost & Found
 
-사진을 AI로 분석해 습득물을 자동 등록하고, 사용자가 특징을 검색해 보관 위치를 찾는 웹사이트입니다.
+Google Sheet에 저장된 Base64 사진과 AI 분석 결과를 읽어 분실물을 검색하고 보관 위치를 확인하는 GitHub Pages 웹사이트입니다.
 
-## 시스템 구조
+## 현재 연결 구조
 
 ```text
-GitHub Pages (index.html, CSS, JavaScript)
-                  ↓ HTTPS
-Google Apps Script Web App
-        ├── Google Sheets: 물건 정보
-        ├── Google Drive: 물건 사진
-        └── OpenAI Responses API: 사진 분석
+웹사이트 목록 조회
+GitHub Pages → 공개 Google Sheet (Visualization JSONP)
+
+새 습득물 등록
+GitHub Pages → Google Apps Script → OpenAI Responses API
+                                      ↓
+                          기존 Google Sheet에 3열로 저장
 ```
 
-OpenAI API 키와 Google 자격 증명은 GitHub에 올리지 않습니다. 비밀 값은 Apps Script의 Script Properties에만 저장합니다.
+현재 DB:
+
+```text
+https://docs.google.com/spreadsheets/d/1CTQwF0AhBEgA42sPALIjYo8Hex8q-sX2DAOEDmvLZ7Q/edit?gid=0
+```
+
+## DB 형식
+
+기존 시트 형식을 변경하지 않습니다. 헤더 없이 각 행을 다음처럼 사용합니다.
+
+| 열 | 값 |
+|---|---|
+| A | 등록 시간 |
+| B | `data:image/jpeg;base64,...` 형식 이미지 |
+| C | AI 분석 텍스트 |
+
+C열 예시:
+
+```text
+name: "스마트폰"
+category: "전자기기"
+color: "검은색"
+features: "직사각형 터치스크린과 둥근 모서리"
+distinctiveFeatures: "밝은색 케이스가 씌워져 있음"
+location: "A-1"
+note: "선택 입력 사항"
+```
+
+기존 행에 `location`이 없으면 웹사이트에는 `미지정`으로 표시됩니다.
 
 ## 프로젝트 파일
 
 ```text
 .
-├── index.html                 # 검색·상세·공개 등록 화면
-├── styles.css                 # 전체 디자인과 반응형 스타일
-├── app.js                     # 검색, 렌더링, API 통신
-├── config.js                  # Apps Script 공개 웹 앱 주소
-├── .nojekyll                  # GitHub Pages 정적 배포 설정
+├── index.html
+├── styles.css
+├── app.js
+├── config.js
+├── .nojekyll
 └── google-apps-script/
-    ├── Code.gs                # Sheets, Drive, OpenAI 백엔드
-    └── appsscript.json        # Apps Script 설정
+    ├── Code.gs
+    └── appsscript.json
 ```
 
-## 1. 웹사이트 먼저 확인하기
+## 1. 웹사이트 확인
 
-API 연결 전에는 `config.js`의 `DEMO_MODE`가 `true`이므로 예시 데이터가 표시됩니다.
-
-VS Code에서 폴더를 열고 `index.html`을 브라우저에서 열거나 다음 명령으로 로컬 서버를 실행합니다.
+`config.js`에 실제 Sheet ID와 GID가 이미 설정되어 있습니다.
 
 ```bash
 python3 -m http.server 8000
 ```
 
-브라우저에서 `http://localhost:8000`을 엽니다.
+브라우저에서 `http://localhost:8000`을 열면 시트에 있는 스마트폰 사진과 분석 내용이 표시됩니다.
+
+검색은 이름, 카테고리, 색상, 특징, 보관 위치를 대상으로 동작합니다.
 
 ## 2. Google Apps Script 만들기
 
-1. [Google Apps Script](https://script.google.com/)에서 **새 프로젝트**를 만듭니다.
-2. 기본 `Code.gs` 내용을 지우고 이 저장소의 `google-apps-script/Code.gs` 전체를 붙여 넣습니다.
-3. 프로젝트 설정에서 `appsscript.json` 표시를 켠 뒤, 저장소의 같은 파일 내용으로 교체합니다.
-4. 프로젝트 이름을 `다시, 여기 API`로 변경합니다.
+사진 조회만 할 때는 Apps Script가 필요하지 않습니다. 웹사이트에서 새 사진까지 등록하려면 다음 설정이 필요합니다.
 
-## 3. 비밀 값 설정하기
+1. [Google Apps Script](https://script.google.com/)에서 새 프로젝트를 만듭니다.
+2. 기본 `Code.gs`를 저장소의 `google-apps-script/Code.gs` 내용으로 교체합니다.
+3. 프로젝트 설정에서 `appsscript.json` 표시를 켜고 저장소의 같은 파일 내용으로 교체합니다.
+4. 프로젝트 이름을 `다시, 여기 API`로 지정합니다.
 
-Apps Script 왼쪽의 **프로젝트 설정 → 스크립트 속성**에 다음 값을 추가합니다.
+## 3. OpenAI 키 설정
+
+Apps Script의 **프로젝트 설정 → 스크립트 속성**에 다음 값을 추가합니다.
 
 | 속성 | 값 |
 |---|---|
-| `OPENAI_API_KEY` | OpenAI Platform에서 발급한 API 키 |
-| `OPENAI_MODEL` | 선택 사항. 기본값은 `gpt-5.6-luna` |
+| `OPENAI_API_KEY` | OpenAI Platform API 키 |
+| `OPENAI_MODEL` | 선택 사항, 기본값 `gpt-5.6-luna` |
+| `SPREADSHEET_ID` | 선택 사항, 코드에 현재 DB가 기본값으로 설정됨 |
+| `SHEET_GID` | 선택 사항, 기본값 `0` |
 
-API 키는 `config.js`나 GitHub 파일에 넣지 않습니다.
+API 키는 GitHub 파일에 넣지 않습니다.
 
-## 4. Sheets와 Drive 준비하기
+## 4. 기존 Sheet 연결 승인
 
-Apps Script 편집기 상단 함수 목록에서 `setupProject`를 선택하고 **실행**합니다.
+Apps Script 함수 목록에서 `setupProject`를 선택해 한 번 실행하고 Google Sheets 접근 권한을 승인합니다.
 
-첫 실행 시 Google 권한 요청을 승인하면 다음 항목이 자동 생성됩니다.
+이 함수는 기존 데이터를 삭제하거나 열 구조를 바꾸지 않습니다. 현재 DB 접근 가능 여부와 행 개수만 확인합니다.
 
-- `다시, 여기 - 분실물 DB` 스프레드시트
-- `lost_items` 시트와 컬럼 제목
-- `다시, 여기 - 분실물 사진` Google Drive 폴더
-- `SPREADSHEET_ID`, `IMAGE_FOLDER_ID` 스크립트 속성
+## 5. 웹 앱 배포
 
-실행 로그에 생성된 스프레드시트와 폴더 주소가 표시됩니다.
+1. **배포 → 새 배포 → 웹 앱**을 선택합니다.
+2. 실행 사용자는 **나**로 설정합니다.
+3. 액세스 사용자는 **모든 사용자**로 설정합니다.
+4. 배포 후 `/exec`로 끝나는 URL을 복사합니다.
 
-> 공개 웹사이트에 사진을 표시하려면 Drive 파일의 링크 공유가 허용되어야 합니다. 학교나 회사 Google Workspace에서 외부 공유가 차단되어 있다면 개인 Google 계정을 사용하거나 별도 이미지 저장소가 필요합니다.
-
-## 5. Apps Script를 웹 앱으로 배포하기
-
-1. Apps Script 오른쪽 위 **배포 → 새 배포**를 누릅니다.
-2. 유형은 **웹 앱**을 선택합니다.
-3. 실행 사용자는 **나**를 선택합니다.
-4. 액세스 사용자는 **모든 사용자**를 선택합니다.
-5. 배포 후 `/exec`로 끝나는 웹 앱 URL을 복사합니다.
-
-브라우저에서 다음 주소를 열어 연결 상태를 확인합니다.
+다음 주소를 브라우저에서 열어 확인합니다.
 
 ```text
-복사한_URL?action=health
+Apps_Script_URL?action=health
 ```
 
-`{"ok":true,...}`가 표시되면 성공입니다.
+`{"ok":true,...}`가 나오면 연결된 것입니다.
 
-## 6. 프런트엔드 연결하기
+## 6. 사진 등록 기능 연결
 
-`config.js`를 다음과 같이 수정합니다.
+`config.js`의 `API_URL`에 배포 주소를 입력합니다.
 
 ```js
 window.APP_CONFIG = {
+  SHEET_ID: "1CTQwF0AhBEgA42sPALIjYo8Hex8q-sX2DAOEDmvLZ7Q",
+  SHEET_GID: "0",
   API_URL: "https://script.google.com/macros/s/배포_ID/exec",
   DEMO_MODE: false,
 };
 ```
 
-로컬 페이지를 새로고침하면 Google Sheets의 실제 데이터가 표시됩니다. **습득물 등록**에서 누구나 사진과 위치를 입력하면 다음 과정이 실행됩니다.
+이후 **습득물 등록**에서 사진과 위치를 입력하면 다음 과정이 실행됩니다.
 
 ```text
-사진 업로드 → OpenAI 이미지 분석 → Drive 사진 저장 → Sheets 정보 저장 → 웹사이트 표시
+Base64 변환 → OpenAI 사진 분석 → A/B/C 3열 새 행 추가 → 웹사이트 새로고침
 ```
 
-## 7. GitHub Pages 배포하기
+## 7. GitHub Pages 배포
 
-GitHub에서 빈 저장소를 만든 뒤 이 폴더의 파일을 올립니다. 저장소의 **Settings → Pages**에서 다음을 선택합니다.
+```bash
+git add .
+git commit -m "feat: connect Google Sheet database"
+git push -u origin main
+```
+
+GitHub 저장소의 **Settings → Pages**에서 다음을 설정합니다.
 
 - Source: `Deploy from a branch`
 - Branch: `main`
 - Folder: `/ (root)`
 
-배포가 끝나면 `https://사용자명.github.io/저장소명/`에서 접속할 수 있습니다.
+## 공개 설정 주의사항
 
-## 스프레드시트 컬럼
-
-| 컬럼 | 내용 |
-|---|---|
-| `id` | 고유 ID |
-| `name` | 물건 이름 |
-| `category` | 물건 종류 |
-| `color` | 색상 |
-| `features` | 일반 특징 JSON 배열 |
-| `distinctive_features` | 구별되는 특징 JSON 배열 |
-| `location` | 보관 위치 |
-| `image_url` | 공개 이미지 주소 |
-| `drive_file_id` | Drive 파일 ID |
-| `created_at` | 등록 시각 |
-| `status` | `보관 중` 또는 `반환 완료` |
-| `confidence` | AI 분석 확신도 |
-| `note` | 등록 참고 사항 |
-
-## 보안 주의사항
-
-- `OPENAI_API_KEY`는 Script Properties에만 저장합니다.
-- 등록 기능이 공개되어 있으므로 누구나 OpenAI API 호출을 발생시킬 수 있습니다.
-- OpenAI API 사용량 제한과 결제 한도를 설정하는 것을 권장합니다.
-- Apps Script를 수정한 뒤에는 **배포 관리 → 새 버전**으로 다시 배포해야 변경 사항이 반영됩니다.
-
-## OpenAI API
-
-백엔드는 OpenAI Responses API에 사진을 Base64 데이터 URL로 전달하고, Structured Outputs의 JSON Schema로 아래 값을 받습니다.
-
-```json
-{
-  "name": "무선 마우스",
-  "category": "컴퓨터 주변기기",
-  "color": "검정",
-  "features": ["스크롤 휠", "좌우 버튼"],
-  "distinctive_features": ["표면의 작은 흠집"],
-  "confidence": 0.92
-}
-```
-# AI-
+- 현재 Sheet는 공개 조회가 가능해야 GitHub Pages에서 직접 읽을 수 있습니다.
+- Base64는 암호화가 아니므로 공개 Sheet의 사진은 누구나 복원할 수 있습니다.
+- 등록 API도 공개되므로 반복 요청으로 OpenAI 비용이 발생할 수 있습니다.
+- OpenAI API 키는 반드시 Apps Script의 Script Properties에만 저장합니다.
+- 프런트엔드와 백엔드는 이미지 크기를 5MB 이하로 제한합니다.
