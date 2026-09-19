@@ -1,0 +1,49 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# 환경 변수와 비밀 설정
+.env
+.env.*
+!.env.example
+config.local.js
+secrets.*
+
+# API 및 Google 인증 파일
+credentials*.json
+client_secret*.json
+service-account*.json
+service_account*.json
+token*.json
+.clasprc.json
+.clasp.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 로컬 데이터와 업로드 파일
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+tmp/
+temp/
+
+# 로그와 캐시
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+
+# 패키지와 가상환경
+node_modules/
+.venv/
+venv/
+
+# 편집기 및 로컬 도구 설정
+.idea/
+.vscode/
+.codex/
+.agents/

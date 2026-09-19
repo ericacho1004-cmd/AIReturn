@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="AI로 등록된 분실물을 빠르게 검색하고 보관 위치를 확인하는 스마트 분실물 센터"
+    />
+    <meta name="theme-color" content="#153e35" />
+    <title>다시, 여기 | 스마트 분실물 센터</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">본문으로 바로가기</a>
+
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="다시, 여기 홈">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img">
+            <path d="M8 17.5 20 8l12 9.5v14A2.5 2.5 0 0 1 29.5 34h-19A2.5 2.5 0 0 1 8 31.5z" />
+            <path d="M15 23.5c2.8-4.1 7.2-4.1 10 0M20 19v10" />
+          </svg>
+        </span>
+        <span>
+          <strong>다시, 여기</strong>
+          <small>SMART LOST &amp; FOUND</small>
+        </span>
+      </a>
+
+      <nav aria-label="주요 메뉴">
+        <a href="#search">분실물 찾기</a>
+        <a href="#recent">최근 습득물</a>
+        <button class="nav-register" id="open-register" type="button">습득물 등록</button>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="search">
+        <div class="hero-copy">
+          <p class="eyebrow">AI SMART LOST &amp; FOUND</p>
+          <h1>잃어버린 물건,<br /><em>다시 여기에서.</em></h1>
+          <p class="hero-description">
+            색상이나 특징을 편하게 입력해 보세요.<br />AI가 등록한 습득물에서 가장 가까운 물건을 찾아드립니다.
+          </p>
+
+          <form class="search-box" id="search-form" role="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m16.5 16.5 4 4" />
+            </svg>
+            <label class="sr-only" for="search-input">분실물 검색</label>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="예: 검은색 무선 마우스, 파란 우산"
+              autocomplete="off"
+            />
+            <button type="submit">찾아보기</button>
+          </form>
+
+          <div class="quick-search" aria-label="빠른 검색어">
+            <span>많이 찾는 물건</span>
+            <button type="button" data-query="지갑">지갑</button>
+            <button type="button" data-query="이어폰">이어폰</button>
+            <button type="button" data-query="우산">우산</button>
+            <button type="button" data-query="전자기기">전자기기</button>
+          </div>
+        </div>
+
+        <div class="hero-art" aria-hidden="true">
+          <div class="sun"></div>
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="object-card card-wallet">
+            <span class="object-icon">▰</span>
+            <span>갈색 지갑</span>
+          </div>
+          <div class="object-card card-earbuds">
+            <span class="object-icon">◖◗</span>
+            <span>무선 이어폰</span>
+          </div>
+          <div class="object-card card-key">
+            <span class="object-icon">⌕</span>
+            <span>열쇠</span>
+          </div>
+          <div class="location-pin">
+            <svg viewBox="0 0 64 80">
+              <path d="M32 75S7 50 7 30a25 25 0 1 1 50 0C57 50 32 75 32 75Z" />
+              <circle cx="32" cy="30" r="9" />
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="서비스 현황">
+        <div><strong id="total-count">0</strong><span>등록된 습득물</span></div>
+        <div><strong id="stored-count">0</strong><span>현재 보관 중</span></div>
+        <div><strong>AI</strong><span>사진 자동 분석</span></div>
+      </section>
+
+      <section class="items-section" id="recent">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">RECENTLY FOUND</p>
+            <h2 id="items-title">최근 등록된 물건</h2>
+          </div>
+          <button class="text-button" id="show-all" type="button">전체 보기 <span>→</span></button>
+        </div>
+
+        <div class="connection-notice" id="connection-notice" hidden>
+          <span></span>
+          <p><strong>미리보기 모드</strong> 현재 예시 데이터를 표시하고 있습니다.</p>
+        </div>
+
+        <div class="loading" id="loading" aria-live="polite" hidden>
+          <span></span><span></span><span></span>
+          <p>습득물을 불러오는 중입니다</p>
+        </div>
+
+        <div class="item-grid" id="item-grid" aria-live="polite"></div>
+
+        <div class="empty-state" id="empty-state" hidden>
+          <div>?</div>
+          <h3>검색 결과가 없습니다</h3>
+          <p>색상이나 물건 종류처럼 더 짧은 단어로 검색해 보세요.</p>
+          <button type="button" id="reset-search">최근 습득물 보기</button>
+        </div>
+      </section>
+
+      <section class="process-section">
+        <div>
+          <p class="eyebrow">HOW IT WORKS</p>
+          <h2>물건이 주인을 찾아가는 과정</h2>
+        </div>
+        <ol class="process-list">
+          <li><span>01</span><strong>물건 감지</strong><p>센서가 수납함에 들어온 물건을 감지합니다.</p></li>
+          <li><span>02</span><strong>AI 분석</strong><p>카메라 사진에서 종류와 특징을 자동으로 찾습니다.</p></li>
+          <li><span>03</span><strong>위치 저장</strong><p>정보와 보관 위치가 스프레드시트에 기록됩니다.</p></li>
+          <li><span>04</span><strong>빠른 검색</strong><p>누구나 특징을 검색해 보관 위치를 확인합니다.</p></li>
+        </ol>
+      </section>
+    </main>
+
+    <footer>
+      <div class="brand footer-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40"><path d="M8 17.5 20 8l12 9.5v14A2.5 2.5 0 0 1 29.5 34h-19A2.5 2.5 0 0 1 8 31.5z" /><path d="M15 23.5c2.8-4.1 7.2-4.1 10 0M20 19v10" /></svg>
+        </span>
+        <span><strong>다시, 여기</strong><small>SMART LOST &amp; FOUND</small></span>
+      </div>
+      <p>잃어버린 물건과 사람을 다시 연결합니다.</p>
+      <p class="copyright">© 2026 다시, 여기. All rights reserved.</p>
+    </footer>
+
+    <dialog class="modal item-modal" id="item-modal">
+      <button class="modal-close" type="button" data-close="item-modal" aria-label="닫기">×</button>
+      <div id="item-detail"></div>
+    </dialog>
+
+    <dialog class="modal register-modal" id="register-modal">
+      <button class="modal-close" type="button" data-close="register-modal" aria-label="닫기">×</button>
+      <div class="modal-heading">
+        <p class="eyebrow">NEW FOUND ITEM</p>
+        <h2>새 습득물 등록</h2>
+        <p>사진과 보관 위치를 입력하면 AI가 물건 정보를 분석해 등록합니다.</p>
+      </div>
+
+      <form id="register-form">
+        <label class="upload-zone" for="item-image" id="upload-zone">
+          <input id="item-image" name="image" type="file" accept="image/jpeg,image/png,image/webp" required />
+          <img id="image-preview" alt="선택한 물건 사진 미리보기" hidden />
+          <span class="upload-prompt" id="upload-prompt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16v3h16v-3M8 9l4-4 4 4M12 5v11" /></svg>
+            <strong>물건 사진 선택</strong>
+            <small>JPG, PNG, WEBP · 최대 5MB</small>
+          </span>
+        </label>
+
+        <label>
+          보관 위치
+          <input name="location" type="text" placeholder="예: A-1" maxlength="30" required />
+        </label>
+
+        <label>
+          참고 사항 <span>(선택)</span>
+          <textarea name="note" placeholder="AI 분석에 참고할 내용이 있으면 입력하세요." maxlength="300"></textarea>
+        </label>
+
+        <p class="form-message" id="form-message" aria-live="polite"></p>
+        <button class="primary-button" id="register-submit" type="submit">
+          <span>AI로 분석하고 등록하기</span>
+        </button>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
