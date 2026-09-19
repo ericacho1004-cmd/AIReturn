@@ -102,7 +102,7 @@
       <section class="stats" aria-label="서비스 현황">
         <div><strong id="total-count">0</strong><span>등록된 습득물</span></div>
         <div><strong id="stored-count">0</strong><span>현재 보관 중</span></div>
-        <div><strong>AI</strong><span>사진 자동 분석</span></div>
+        <div><strong id="recovered-count">0</strong><span>회수 완료</span></div>
       </section>
 
       <section class="items-section" id="recent">
@@ -112,6 +112,12 @@
             <h2 id="items-title">최근 등록된 물건</h2>
           </div>
           <button class="text-button" id="show-all" type="button">전체 보기 <span>→</span></button>
+        </div>
+
+        <div class="status-filters" aria-label="분실물 상태 선택">
+          <button class="active" type="button" data-status-filter="전체" aria-pressed="true">전체</button>
+          <button type="button" data-status-filter="보관 중" aria-pressed="false">보관 중</button>
+          <button type="button" data-status-filter="회수 완료" aria-pressed="false">회수 완료</button>
         </div>
 
         <div class="connection-notice" id="connection-notice" hidden>
